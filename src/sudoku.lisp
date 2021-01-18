@@ -136,17 +136,20 @@
           finally (return ret))))
 
 (defun solved-p (grid)
-  (every (curry #'= 1) (map 'vector #'length (flatten grid))))
+  (every (curry #'= 1) (map 'vector #'list-length (flatten grid))))
 
 (defun easiest (grid)
+  (declare (optimize speed))
   (loop with len = 9
         with ret = nil
         for coord in *coordinates*
-        do (let ((vals (at grid coord)))
-             (if (and (/= 1 (length vals))
-                      (< (length vals) len))
-                 (setf len (length vals)
-                       ret coord)))
+        do (let* ((vals (at grid coord))
+                  (new-len (list-length vals)))
+             (if (and (/= 1 new-len)
+                      (< new-len len))
+                 (setf len new-len
+                       ret coord))
+             (if (= 2 len) (return ret)))
         finally (return ret)))
 
 (defun find-solution (grid)
