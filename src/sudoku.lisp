@@ -6,6 +6,9 @@
 
 (in-package :sudoku)
 
+(deftype grid ()
+  `(simple-array list (9 9)))
+
 (define-constant *standard-rows* "ABCDEFGHI" :test #'equal)
 (define-constant *rows* '(0 1 2 3 4 5 6 7 8) :test #'equal)
 (define-constant *cols* '(0 1 2 3 4 5 6 7 8) :test #'equal)
@@ -13,20 +16,28 @@
 (define-constant *coordinates* (map-product #'cons *rows* *cols*) :test #'equal)
 
 (defun new-grid ()
-  (make-array '(9 9) :element-type 'cons :initial-element *initial*))
+  (make-array '(9 9) :element-type 'list :initial-element *initial*))
 
 (defun copy-grid (grid)
   (copy-array grid))
 
+(declaim (inline at))
+(declaim (ftype (function (grid cons) *) at))
 (defun at (grid coord)
-  (aref grid (car coord) (cdr coord)))
+  (declare (optimize speed))
+  (let ((row (car coord))
+        (col (cdr coord)))
+    (declare (fixnum row col))
+  (aref grid row col)))
 
-(defun at-alist (grid coords)
-  (mapcar #'(lambda (coord)
-              (cons coord (at grid coord))) coords))
-
+(declaim (inline put-at))
+(declaim (ftype (function (grid cons list) *) put-at))
 (defun put-at (grid coord val)
-  (setf (aref grid (car coord) (cdr coord)) val))
+  (declare (optimize (debug 3)))
+  (let ((row (car coord))
+        (col (cdr coord)))
+    (declare (fixnum row col))
+  (setf (aref grid row col) val)))
 
 (defun col-units ()
   (mapcar #'(lambda (c) (map-product #'cons *rows* (list c))) *cols*))
@@ -50,7 +61,7 @@
             appending (if (member cell cells :test #'equal) cells nil) into units
             finally (return units)))))
 
-(define-constant *units* (units-grid) :test #'equalp)
+(defparameter *units* (units-grid))
 
 (defun peers-grid (grid)
   (let ((ret (make-array '(9 9) :element-type 'cons)))
@@ -58,7 +69,7 @@
       (let ((cell (cons r c)))
         (remove cell (remove-duplicates (at grid (cons r c)) :test #'equal) :test #'equal)))))
 
-(define-constant *peers* (peers-grid *units*) :test #'equalp)
+(defparameter *peers* (peers-grid *units*))
 
 (defun to-standard (cell)
   (format nil "~A~A" (char *standard-rows* (car cell)) (1+ (cdr cell))))
@@ -67,35 +78,51 @@
   (cons (position (char str 0) *standard-rows*)
         (1- (parse-integer (subseq str 1)))))
 
+(declaim (ftype (function (grid cons fixnum) *) assign))
 (defun assign (grid coord val)
-  (loop with to-eliminate = (remove val (at grid coord))
-        for other-val in to-eliminate
-        do (if (not (eliminate grid coord other-val)) (return nil))
+  (declare (optimize speed))
+  (loop for other-val fixnum in (at grid coord)
+        do (if (and (/= val other-val) ; don't call remove, very expensive
+                    (not (eliminate grid coord other-val)))
+               (return nil))
         finally (return grid)))
 
+(declaim (inline member-p))
+(declaim (ftype (function (fixnum list) boolean) member-p))
+(defun member-p (val sorted-list)
+  (declare (optimize speed))
+  (loop for mem fixnum in sorted-list
+        do (cond ((= mem val) (return t))
+                 ((< val mem) (return nil)))
+        finally (return nil)))
+  
+(declaim (ftype (function (grid cons fixnum) *) eliminate))
 (defun eliminate (grid coord val)
-  (if (not (member val (at grid coord)))
+  (declare (optimize speed)
+           (grid *peers* *units*))
+  (if (not (member-p val (at grid coord)))
       (return-from eliminate grid))
 
-  (put-at grid coord (remove val (at grid coord)))
+  (put-at grid coord (remove val (at grid coord) :test 'eq))
   
-  (if (zerop (length (at grid coord)))
+  (if (null (at grid coord)) ;fast test length = 0
       (return-from eliminate nil))
 
-  (if (= 1 (length (at grid coord)))
+  (if (null (cdr (at grid coord))) ; fast test length = 1
       (loop with other-val = (first (at grid coord))
             for peer in (at *peers* coord)
             do (if (not (eliminate grid peer other-val)) (return-from eliminate nil))))
 
-  (loop with alist = (at-alist grid (at *units* coord))
-        for d in *initial*
-        do (let ((d-places (remove-if-not (curry #'member d) alist :key #'cdr)))
-             (if (zerop (length d-places))
-                 (return-from eliminate nil))
-
-             (if (and (= 1 (length d-places))
-                      (not (assign grid (caar d-places) d)))
-                 (return-from eliminate nil))))
+  (loop for other-coord in (at *units* coord)
+        do (let ((remaining (at grid other-coord)))
+             (if (member-p val remaining)
+                 (progn
+                   (if (null remaining) ; fast test length = 0
+                       (return-from eliminate nil))
+                   
+                   (if (and (null (cdr remaining)) ; fast test length = 1
+                            (not (assign grid other-coord val)))
+                       (return-from eliminate nil))))))
   grid)
 
 (defun parse-single-line-grid (str)
