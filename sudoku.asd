@@ -6,7 +6,8 @@
   :license  "Apache 2"
   :version "0.0.1"
   :depends-on ("alexandria" "array-operations")
-  :components ((:file "src/sudoku")))
+  :components ((:file "src/sudoku")
+               (:file "src/sudoku-fast")))
 
 (asdf:defsystem #:sudoku-tests
   :description "Sudoku Tests"

@@ -33,7 +33,7 @@
 (declaim (inline put-at))
 (declaim (ftype (function (grid cons list) *) put-at))
 (defun put-at (grid coord val)
-  (declare (optimize (debug 3)))
+  (declare (optimize speed))
   (let ((row (car coord))
         (col (cdr coord)))
     (declare (fixnum row col))
@@ -95,7 +95,18 @@
         do (cond ((= mem val) (return t))
                  ((< val mem) (return nil)))
         finally (return nil)))
-  
+
+(declaim (ftype (function (grid cons fixnum) list) val-places-in-unit))
+(defun val-places-in-unit (grid coord val)
+  (declare (optimize speed)
+           (grid *units*))
+  (loop with ret = nil
+        for unit-coord in (at *units* coord)
+        do (let ((vals (at grid unit-coord)))
+             (if (member-p val vals)
+                 (push unit-coord ret)))
+        finally (return ret)))
+                            
 (declaim (ftype (function (grid cons fixnum) *) eliminate))
 (defun eliminate (grid coord val)
   (declare (optimize speed)
@@ -113,16 +124,13 @@
             for peer in (at *peers* coord)
             do (if (not (eliminate grid peer other-val)) (return-from eliminate nil))))
 
-  (loop for other-coord in (at *units* coord)
-        do (let ((remaining (at grid other-coord)))
-             (if (member-p val remaining)
-                 (progn
-                   (if (null remaining) ; fast test length = 0
-                       (return-from eliminate nil))
-                   
-                   (if (and (null (cdr remaining)) ; fast test length = 1
-                            (not (assign grid other-coord val)))
-                       (return-from eliminate nil))))))
+  (let ((remaining (val-places-in-unit grid coord val)))
+    (if (null remaining) ; fast test length = 0
+        (return-from eliminate nil))
+    
+    (if (and (null (cdr remaining)) ; fast test length = 1
+             (not (assign grid (car remaining) val)))
+        (return-from eliminate nil)))
   grid)
 
 (defun parse-single-line-grid (str)
@@ -137,6 +145,14 @@
 
 (defun solved-p (grid)
   (every (curry #'= 1) (map 'vector #'list-length (flatten grid))))
+
+(defun solution-status (grid)
+  (loop with status = :solved
+        for lst across (flatten grid)
+        do (let ((len (list-length lst)))
+             (cond ((= 0 len) (return :unsolvable))
+                   ((< 1 len) (setf status :unsolved))))
+        finally (return status)))
 
 (defun easiest (grid)
   (declare (optimize speed))
@@ -153,8 +169,15 @@
         finally (return ret)))
 
 (defun find-solution (grid)
-  (if (or (null grid)
-          (solved-p grid)) (return-from find-solution grid))
+  (if (null grid)
+      (return-from find-solution nil))
+
+  (let ((status (solution-status grid)))
+    (if (eq :unsolvable status)
+        (return-from find-solution nil))
+
+    (if (eq :solved status)
+        (return-from find-solution grid)))
 
   (let ((coord (easiest grid)))
     (loop for d in (at grid coord)
