@@ -150,7 +150,7 @@
         for other-val from 1 upto 9
         do (if (and (/= val other-val)
                     (square-member other-val square-values)
-                    (not (eliminate grid coord other-val)))
+                    (eq +bad-grid+ (eliminate grid coord other-val)))
                (return +bad-grid+))
         finally (return grid)))
 
@@ -186,10 +186,10 @@
                    (return-from eliminate +bad-grid+))))
   
   (let ((remaining (val-places-in-unit grid coord val)))
-    (if (= -1 remaining) ; fast test length = 0
+    (if (= -1 remaining)
         (return-from eliminate +bad-grid+))
     
-    (if (and (<= 0 remaining) ; fast test length = 1
+    (if (and (<= 0 remaining)
              (eq +bad-grid+ (assign grid remaining val)))
         (return-from eliminate +bad-grid+)))
   
@@ -205,15 +205,13 @@
                        (return +bad-grid+))))
           finally (return ret))))
 
-(declaim (ftype (function (grid) symbol) solved-p))
-(defun solution-status (grid)
+(declaim (ftype (function (grid) boolean) solved-p))
+(defun solved-p (grid)
   (declare (optimize speed (safety 0)))
-  (loop with status = :solved
-        for val across grid
-        do (let ((len (square-length val)))
-             (cond ((= 0 len) (return :unsolvable))
-                   ((< 1 len) (setf status :unsolved))))
-        finally (return status)))
+  (loop for val across grid
+        do (if (/= 1 (square-length val))
+               (return nil))
+        finally (return t)))
 
 (declaim (ftype (function (grid) fixnum) easiest))
 (defun easiest (grid)
@@ -233,14 +231,9 @@
                   (return ret))))
 
 (defun find-solution (grid)
-  (if (eq +bad-grid+ grid)
+  (if (or (eq +bad-grid+ grid)
+          (solved-p grid))
       (return-from find-solution grid))
-
-  (let ((status (solution-status grid)))
-    (if (eq :unsolvable status)
-        (return-from find-solution +bad-grid+))
-    (if (eq :solved status)
-        (return-from find-solution grid)))
   
   (let ((coord (easiest grid)))
     (loop for d from 1 upto 9
@@ -263,8 +256,8 @@
   (dolist (str lst)
     (let ((solution (solve str)))
       (if (not (eq +bad-grid+ solution))
-        (format t "~&~A" (display solution))
-        (format t "~&no solution to puzzle")))))
+          (format t "~&solved-puzzle")
+          (format t "~&no solution to puzzle")))))
   
 (defun display (grid)
   (let ((ret (make-array '(9 9) :element-type 'cons)))

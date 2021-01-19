@@ -146,14 +146,6 @@
 (defun solved-p (grid)
   (every (curry #'= 1) (map 'vector #'list-length (flatten grid))))
 
-(defun solution-status (grid)
-  (loop with status = :solved
-        for lst across (flatten grid)
-        do (let ((len (list-length lst)))
-             (cond ((= 0 len) (return :unsolvable))
-                   ((< 1 len) (setf status :unsolved))))
-        finally (return status)))
-
 (defun easiest (grid)
   (declare (optimize speed))
   (loop with len = 9
@@ -169,15 +161,9 @@
         finally (return ret)))
 
 (defun find-solution (grid)
-  (if (null grid)
-      (return-from find-solution nil))
-
-  (let ((status (solution-status grid)))
-    (if (eq :unsolvable status)
-        (return-from find-solution nil))
-
-    (if (eq :solved status)
-        (return-from find-solution grid)))
+  (if (or (null grid)
+          (solved-p grid))
+      (return-from find-solution grid))
 
   (let ((coord (easiest grid)))
     (loop for d in (at grid coord)
